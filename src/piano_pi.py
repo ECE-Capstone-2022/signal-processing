@@ -25,6 +25,8 @@ PIANO_FILTER = []
 # Max range of Piano keys to consider for the output file
 PIANO_KEY_RANGE = 70
 
+PIANO_KEY_DOMAIN = np.arange(0, 5000, 1)
+
 if 'key_frequencies.txt' not in os.listdir():
   with open('key_frequencies.txt', 'w') as f:
     for n in range(1,89):
@@ -37,10 +39,12 @@ if 'key_frequencies.txt' not in os.listdir():
     f.close()
 
 with open('key_frequencies.txt', 'r') as f:
-    for n in f.read().split('\n'):
-      PIANO_KEY_FREQUENCIES.append(float(n))
+    #TODO Filter out the notes section from key_frequencies.txt
+    freq_txt = f.read().split('\n')
+    for n in freq_txt:
+      PIANO_KEY_FREQUENCIES.append(int(float(n)))
 
-    X = np.arange(0, 5000, 0.001)
+    X = PIANO_KEY_DOMAIN
     Y = np.zeros(len(X))
 
     seen = set()
@@ -69,8 +73,15 @@ def running_average():
   #TODO Implement Running Average
   pass
 
-def comb_filter(frequency_sample) -> np.array:
-  return frequency_sample * PIANO_FILTER
+def comb_filter(frequency_sample, sample_rate, window_size) -> np.array:
+  x = PIANO_KEY_DOMAIN
+  x_p = np.linspace(0, sample_rate, window_size) #x range given freq_bins
+  y = frequency_sample
+  estimated_y = np.interp(x, x_p, y)
+  # return frequency_sample * PIANO_FILTER
+  print(estimated_y)
+  print(estimated_y * PIANO_FILTER)
+  return estimated_y * PIANO_FILTER
 
 def neighbors_average():
   # TODO Implement neighbors average
@@ -82,52 +93,60 @@ PROPAGATION_FNS = {
   'NA' : neighbors_average
 }
 
+#
+def rescale(arr, factor=2):
+    n = len(arr)
+    return np.interp(np.linspace(0, n, factor*n+1), np.arange(n), arr)
+
 class PianoPi:
 
   def __init__(self, play_rate=14, key_range = 70):
-    self.piano_keys = PIANO_KEY_FREQUENCIES[key_range]
+    self.piano_keys = PIANO_KEY_FREQUENCIES[:key_range]
     self.piano_key_filter = PIANO_KEY_FREQUENCIES
     # Rate at which piano keys can be played, samples/second
     self.play_rate = play_rate
     self.amplitude_max = 5 * (10**6)
 
-  def audio_time_series(self, audio_file_path: str) -> (tuple(int, np.array) or Exception):
+  def audio_time_series(self, audio_file_path: str) -> (tuple([int, np.array]) or Exception):
     '''Returns a numpy array of an audio recording in the time domain'''
     return wavfile.read(audio_file_path)
 
   def generate_windows(self, audio: np.array, sample_rate: int) -> np.array(np.array):
     '''Returns a NxM matrix containing sections of the time series array'''
 
-    window_size = sample_rate // self.play_rate
+    window_size = sample_rate // self.play_rate # number of samples per window
 
-    N = len(audio) # Number of origianl samples
-    D = N // window_size # Duration
+    N = len(audio) # Number of original samples
+    D = N // sample_rate # Duration
 
-    res = np.array()
+    windows_count = N // window_size # number of windows
 
-    for t in range (D):
-      start = t*self.play_rate
+    res = []
+
+    for window_i in range (windows_count):
+      start = window_i*window_size
       # 'end' grabs the fraction of samples within the last second of the original 
       # audio if the original audio is not exactly whole seconds long, i.e 5.18 
       # seconds as opposed to 5 seconds
-      end = min((t+1) * self.play_rate, len(audio))
+      end = min((window_i+1) * window_size, len(audio))
       audio_window = audio[start:end,0]
-      res = np.append(res, audio_window)
+      res.append(audio_window)
 
     return res
 
-  def freq_through_time(self, windows):
+  def freq_through_time(self, windows) -> np.array(np.array):
     '''Returns a NxM matrix of spectral distribution for each window in the
     time doamin'''
 
-    res = np.array()
+    res = []
     for window in windows:
       frequencies = fft(window)
-      res = np.append(frequencies)
+      # print(np.shape(frequencies))
+      res.append(frequencies)
     
     return res
 
-  def freq_to_piano_keys(self, frequency_samples, avg_technique = 'CF'):
+  def freq_to_piano_keys(self, frequency_samples, sample_rate, window_size, avg_technique = 'CF'):
     '''Returns a NxM matrix of every windows frequencies mapped to the keys
      on a piano'''
 
@@ -136,9 +155,10 @@ class PianoPi:
 
     avg_fn = PROPAGATION_FNS[avg_technique]
     
-    res = np.array()
+    res = []
     for freq_sample in frequency_samples:
-      res = np.append(res, avg_fn(freq_sample))
+      res.append([[avg_fn(freq_sample, sample_rate, window_size)]])
+      # res = np.append(res, avg_fn(freq_sample))
 
     return res
 
@@ -156,10 +176,10 @@ class PianoPi:
 
     # Generate a unique id for this audio recording
     id = str(uuid.uuid4())
-    file_path = f'/out/recordings/{id}.tsv'
+    file_path = f'out/{id}.tsv'
 
     # Create the text file named {uuid}.tsv
-    with open(file_path,'r') as out_file:
+    with open(file_path,'wt') as out_file:
       # Write the column headers
       tsv_writer = csv.writer(out_file, delimiter='\t')
       tsv_writer.writerow(TSV_HEADERS)
@@ -169,7 +189,9 @@ class PianoPi:
         tsv_row = [str(time_stamp)]
 
         for k in self.piano_keys:
-          i = np.where(sample == k)
+          print(sample, k)
+          print(np.where(np.isclose(sample, k)))
+          i = np.where(np.isclose(sample, k))[0][0]
           tsv_row.append(self.get_duty_cycle(sample[i]))
         
         tsv_writer.writerow(tsv_row)
@@ -187,11 +209,6 @@ class PianoPi:
 
     freq_through_time = self.freq_through_time(windows)
 
-    freq_to_piano_keys = self.freq_to_piano_keys(freq_through_time)
+    freq_to_piano_keys = self.freq_to_piano_keys(freq_through_time, sample_rate, len(windows[0]))
 
     return self.generate_piano_tsv(freq_to_piano_keys)
-
-
-    
-
-  
