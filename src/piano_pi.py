@@ -14,6 +14,7 @@ from scipy.io import wavfile
 import uuid
 import csv
 
+from find_n import find_N
 # Generate Piano Key Frequencies
 
 # Frequencies corresponding to each piano key
@@ -189,8 +190,8 @@ class PianoPi:
         tsv_row = [str(time_stamp)]
 
         for k in self.piano_keys:
-          print(sample, k)
-          print(np.where(np.isclose(sample, k)))
+          # print(sample, k)
+          # print(np.where(np.isclose(sample, k)))
           i = np.where(np.isclose(sample, k))[0][0]
           tsv_row.append(self.get_duty_cycle(sample[i]))
         
@@ -198,6 +199,25 @@ class PianoPi:
     out_file.close()
 
     return file_path
+
+  def freq_through_time_new(self, windows, sample_rate):
+
+    for window in windows:
+      # Calculate frequencies for window
+      freq_window = np.zeros(window.shape)
+      for frequency in self.piano_keys:
+        N, error, effective_frequency = find_N(frequency, sample_rate, N_max=len(window))
+        time_domain = np.interp(np.arange(N), np.arange(len(window)), window)
+        freq_domain = fft(time_domain)
+        freq_y = freq_domain[0:len(freq_domain)//2]
+        freq_x = np.linspace(0, sample_rate/2, N)
+        key_freq_i = np.where(freq_x == effective_frequency)
+        power_at_i = freq_y[key_freq_i[0][0]]
+
+        freq_window_x = np.linspace(0, sample_rate/2, len(window))
+        freq_window = freq_window + (power_at_i * signal.unit_impulse(len(X), i))
+
+
 
   def process_audio(self, audio_file_path) -> str:
     '''Generates tsv file corresponding to the output of the audio processing
