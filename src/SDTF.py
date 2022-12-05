@@ -87,7 +87,7 @@ from math import e, pi
 PLAY_RATE  = 15
 SMA_WINDOW = 3200
 SAMPLE_RATE = 48000
-MAGNITUDE_MAX = 5 * (10**6)
+MAGNITUDE_MAX = 30000
 
 
 ########################################
@@ -143,11 +143,15 @@ class SDFTBin:
     '''Calculates the latest X_k given a new sample
       X_k(n) = [X_k(n-1) - x[n-N] + x[n]] (e^((j2pi)/N))
     '''
+
     self.X_k = (self.X_k - self.w[0] + x_n) * (e**((1j * 2*pi * self.k)/self.N))
-    self.w.pop(0)
+    x_n = self.w.pop(0) # x[n-N]
     self.w.append(x_n)
     self.n += 1
+    X_k = self.X_k_MA.SMA # X_{k-1}
     self.X_k_MA.update(self.X_k)
+
+    return (x_n, X_k)
 
   def parse(self, x):
     '''
@@ -158,13 +162,16 @@ class SDFTBin:
     rate
     '''
     print(f'Parsing input audio file of length {len(x)}')
-    X_k = []
+    X_k = [] # Resultant frequency through time
+    x_n_through_time = [] # Time-series data corresponding to X_k
     for n, x_n in enumerate(x):
-      self.update(x_n)
+      prev_x_n, prev_X_k = self.update(x_n)
       if (n % self.N_max) == 0:
         X_k.append(self.X_k_MA.SMA)
-    print(f'Done! With a play rate of {self.play_rate}, we expect an output of size {len(x) // self.N_max}, and got {len(X_k)-1}')    
-    return X_k
+        curr_x_n = (self.X_k_MA.SMA / (e**(1j * 2 * pi * (self.k / self.N)))) - (prev_X_k) + prev_x_n
+        x_n_through_time.append(curr_x_n)
+    print(f'Done! With a play rate of {self.play_rate}, we expect an output of size {len(x) // self.N_max}, and got {len(X_k)-1}')
+    return x_n, X_k
         
 
 

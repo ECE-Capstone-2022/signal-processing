@@ -16,6 +16,8 @@ Contact: aceamarco@gmail.com / macea@andrew.cmu.edu
 
 from SDTF import SDFTBin, PLAY_RATE, SAMPLE_RATE, MAGNITUDE_MAX
 import matplotlib.pyplot as plt
+from scipy.io import wavfile
+from math import e
 import numpy as np
 import os
 import uuid
@@ -58,7 +60,9 @@ class PianoPi:
   def __init__(self, sample_rate=SAMPLE_RATE, play_rate=PLAY_RATE):
     self.sample_rate = sample_rate
     self.play_rate = play_rate
+    self.N_max = sample_rate // play_rate
     self.sample_window = sample_rate // play_rate
+    self.uuid = uuid.uuid4()
 
   
   def generate_frequencies_through_time(self, audio):
@@ -67,18 +71,23 @@ class PianoPi:
 
     self.audio_len = len(audio)
     print(self.audio_len)
-    self.SDTFBins = [SDFTBin(freq, self.sample_rate) for freq in PIANO_KEY_FREQUENCIES]
+    self.SDFTBins = [SDFTBin(freq, self.sample_rate) for freq in PIANO_KEY_FREQUENCIES]
     self.key_freq_through_time = [[] for i in range(len(PIANO_KEY_FREQUENCIES))]
-    assert(len(self.key_freq_through_time) == len(self.SDTFBins))
+    self.x_n_through_time = [[] for i in range(len(PIANO_KEY_FREQUENCIES))]
+    assert(len(self.key_freq_through_time) == len(self.SDFTBins))
 
-    for i, bin in enumerate(self.SDTFBins):
+    for i, bin in enumerate(self.SDFTBins):
       print(f'Parsing audio file for key {i+1}')
-      X_k = bin.parse(audio)
+      x_n, X_k = bin.parse(audio)
       self.key_freq_through_time[i] = X_k
+      self.x_n_through_time[i] = x_n
     print(np.shape(self.key_freq_through_time))
 
 
   def plot_frequencies_through_time(self):
+    '''Generates a 3-D plot of the frequency components for each piano key
+    changing through time.'''
+
     assert(self.key_freq_through_time)
     assert(self.audio_len)
     assert(self.sample_window)
@@ -97,11 +106,56 @@ class PianoPi:
     ax.set(title="Change in Freqeuncy Across Time Using SDFT", xlabel=r'Time $t$ [s]', ylabel=r'Frequency $\omega$ [Hz]')
     ax.set_zlabel("Amplitude")
     ax.tick_params(axis='z', which='major', pad=-3)
+
+    # Generating file path for plot image
+    id = str(self.uuid)
+    file_path = f'out/{id}/plots'
+
+    if not os.path.exists(file_path):
+      os.makedirs(file_path)
+    file_path = file_path + f'/{id}_3d.png'
+
+    plt.savefig(file_path)
     
     return plt.show()
 
+  def reconstruct_audio(self):
+    '''Reconstructs an output audio file using the frequency components of every
+    piano sample'''
 
-  def generate_tsv(self, uuid=uuid.uuid4(), amplitude=MAGNITUDE_MAX):
+    assert(self.key_freq_through_time)
+    assert(self.audio_len)
+    assert(self.sample_window)
+
+    x = []
+
+    for n in range(len(self.key_freq_through_time[0])):
+      freqs_at_n = [np.abs(key[n]) for key in self.key_freq_through_time]
+      #TODO Finish writing this line
+      # x_n_per_key = [key[n] for key in self.]
+
+      # Fill in 0's between piano samples
+      x.extend([0]*(self.N_max - 1))
+
+      # Each Key => |X_k| * delta[n-self.note_frequency] -IDFT-> |X_k|e^(j*self.note_frequency*n)
+      x.append(sum(self.x_n_through_time[n]))
+    
+    fig, ax = plt.subplots()
+
+
+    # Generating file path for audio file
+    id = str(self.uuid)
+    file_path = f'out/{id}/audio'
+
+    if not os.path.exists(file_path):
+      os.makedirs(file_path)
+    file_path = file_path + f'/{id}_out_test.wav'
+
+    wavfile.write(file_path, self.sample_rate, np.asarray(x))
+
+    return file_path
+
+  def generate_tsv(self, amplitude=MAGNITUDE_MAX):
     '''Generates a text file containing what keys to play, returns unique id
     for given recording.'''
 
@@ -110,9 +164,10 @@ class PianoPi:
     assert(TSV_HEADERS)
     assert(self.audio_len)
     assert(self.sample_window)
+    assert(self.uuid)
 
     # Generate a unique id for this audio recording
-    id = str(uuid)
+    id = str(self.uuid)
     file_path = f'out/{id}'
 
     if not os.path.exists(file_path):
