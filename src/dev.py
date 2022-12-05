@@ -16,8 +16,10 @@ print(np.shape(audio_time_series))
 
 PianoPi = PianoPi(sample_rate, 15)
 
-PianoPi.generate_frequencies_through_time(audio_time_series)
+PianoPi.generate_output(audio_time_series)
 
 PianoPi.plot_frequencies_through_time()
+
+PianoPi.plot_reconstructed_audio()
 
 # PianoPi.generate_tsv()

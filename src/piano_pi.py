@@ -61,7 +61,7 @@ class PianoPi:
     self.sample_window = sample_rate // play_rate
 
   
-  def generate_frequencies_through_time(self, audio):
+  def generate_output(self, audio):
     # Preconditions
     assert(PIANO_KEY_FREQUENCIES)
 
@@ -69,12 +69,18 @@ class PianoPi:
     print(self.audio_len)
     self.SDTFBins = [SDFTBin(freq, self.sample_rate) for freq in PIANO_KEY_FREQUENCIES]
     self.key_freq_through_time = [[] for i in range(len(PIANO_KEY_FREQUENCIES))]
+    self.reconstructed_audio = [[] for i in range(len(PIANO_KEY_FREQUENCIES))]
     assert(len(self.key_freq_through_time) == len(self.SDTFBins))
 
     for i, bin in enumerate(self.SDTFBins):
       print(f'Parsing audio file for key {i+1}')
-      X_k = bin.parse(audio)
-      self.key_freq_through_time[i] = X_k
+      X_k, x_n = bin.parse(audio)
+      self.key_freq_through_time[i] = X_k # X_k[n] for this specific key
+      self.reconstructed_audio[i] = x_n # x[n] for this specific key
+
+    # Also generate transposed versions of both matrices
+    self.key_freq_through_time_T = np.transpose(self.key_freq_through_time)
+    self.reconstructed_audio_T = np.transpose(self.reconstructed_audio)
     print(np.shape(self.key_freq_through_time))
 
 
@@ -86,8 +92,9 @@ class PianoPi:
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
 
-    for n in range(len(self.key_freq_through_time[0])):
-      freqs_at_n = [abs(key[n]) for key in self.key_freq_through_time]
+    # TODO: Parrallelize this code block
+    for n in range(len(self.key_freq_through_time_T)):
+      freqs_at_n = np.abs(self.key_freq_through_time_T[n])
       Y = PIANO_KEY_FREQUENCIES
       Z = freqs_at_n
       X = np.full(len(PIANO_KEY_FREQUENCIES), n * (1/self.play_rate))
@@ -98,6 +105,41 @@ class PianoPi:
     ax.set_zlabel("Amplitude")
     ax.tick_params(axis='z', which='major', pad=-3)
     
+    return plt.show()
+
+  def generate_output_wav_file(self):
+    '''Generates an output wav file using the piano using the reconstructed
+    audio
+    
+    ### Implementation Details
+    
+    Wav files require a minimum sample rate of 3000 Hz, and our ears require the
+    audio from the reconstructed samples to persist for some time — because of
+    this, we're multiplying the signal at time p by a decaying exponential that
+    will carry the sound into the next time sample'''
+    #TODO: Implement this function
+    pass
+
+
+  def plot_reconstructed_audio(self):
+    assert(self.reconstructed_audio)
+
+    fig = plt.figure()
+    ax = fig.add_subplot()
+
+    x_n = []
+
+    for n in range(len(self.reconstructed_audio_T)):
+      audio_at_n = self.reconstructed_audio_T[n]
+      x_n.append(sum(audio_at_n))
+
+    X = np.arange(0, len(x_n)*(1/self.play_rate), (1/self.play_rate))
+    Y = np.abs(x_n)
+    ax.plot(X,Y)
+
+    # Labels
+    ax.set(title="Reconstructed Audio", xlabel=r'Time $t$ [s]', ylabel=r'Amplitude')
+
     return plt.show()
 
 
