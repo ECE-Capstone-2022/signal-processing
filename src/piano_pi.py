@@ -15,6 +15,8 @@ Contact: aceamarco@gmail.com / macea@andrew.cmu.edu
 #############
 
 from SDTF import SDFTBin, PLAY_RATE, SAMPLE_RATE, MAGNITUDE_MAX
+from multiprocessing import Process, Value, Array
+from scipy.io import wavfile
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -25,6 +27,14 @@ import csv
 ###############
 ## Constants ##
 ###############
+
+# Audio Reconstruction
+# TODO: See comment below
+'''
+0.001 and 0.0001 produce intelligible outputs, however this is a decay given
+to every note, from what I understand each note has a varying decay
+'''
+DECAY_EXP = 0.001
 
 # Frequencies corresponding to each piano key
 PIANO_KEY_FREQUENCIES = []
@@ -55,10 +65,11 @@ for i, key_freq in enumerate(PIANO_KEY_FREQUENCIES):
 
 class PianoPi:
 
-  def __init__(self, sample_rate=SAMPLE_RATE, play_rate=PLAY_RATE):
+  def __init__(self, uuid = uuid.uuid4(), sample_rate=SAMPLE_RATE, play_rate=PLAY_RATE):
     self.sample_rate = sample_rate
     self.play_rate = play_rate
     self.sample_window = sample_rate // play_rate
+    self.uuid = uuid
 
   
   def generate_output(self, audio):
@@ -66,13 +77,16 @@ class PianoPi:
     assert(PIANO_KEY_FREQUENCIES)
 
     self.audio_len = len(audio)
+    self.audio = audio
+    self.sign = (audio / np.abs(audio)).astype(int)
     print(self.audio_len)
-    self.SDTFBins = [SDFTBin(freq, self.sample_rate) for freq in PIANO_KEY_FREQUENCIES]
+    self.SDFTBins = [SDFTBin(freq, self.sample_rate) for freq in PIANO_KEY_FREQUENCIES]
     self.key_freq_through_time = [[] for i in range(len(PIANO_KEY_FREQUENCIES))]
     self.reconstructed_audio = [[] for i in range(len(PIANO_KEY_FREQUENCIES))]
-    assert(len(self.key_freq_through_time) == len(self.SDTFBins))
+    assert(len(self.key_freq_through_time) == len(self.SDFTBins))
 
-    for i, bin in enumerate(self.SDTFBins):
+    # TODO: Parrallelize this code block
+    for i, bin in enumerate(self.SDFTBins):
       print(f'Parsing audio file for key {i+1}')
       X_k, x_n = bin.parse(audio)
       self.key_freq_through_time[i] = X_k # X_k[n] for this specific key
@@ -92,7 +106,6 @@ class PianoPi:
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
 
-    # TODO: Parrallelize this code block
     for n in range(len(self.key_freq_through_time_T)):
       freqs_at_n = np.abs(self.key_freq_through_time_T[n])
       Y = PIANO_KEY_FREQUENCIES
@@ -106,19 +119,6 @@ class PianoPi:
     ax.tick_params(axis='z', which='major', pad=-3)
     
     return plt.show()
-
-  def generate_output_wav_file(self):
-    '''Generates an output wav file using the piano using the reconstructed
-    audio
-    
-    ### Implementation Details
-    
-    Wav files require a minimum sample rate of 3000 Hz, and our ears require the
-    audio from the reconstructed samples to persist for some time — because of
-    this, we're multiplying the signal at time p by a decaying exponential that
-    will carry the sound into the next time sample'''
-    #TODO: Implement this function
-    pass
 
 
   def plot_reconstructed_audio(self):
@@ -142,6 +142,54 @@ class PianoPi:
 
     return plt.show()
 
+  def generate_output_wav_file(self):
+    '''Generates an output wav file using the piano using the reconstructed
+    audio
+    
+    ### Implementation Details
+    
+    Wav files require a minimum sample rate of 3000 Hz, and our ears require the
+    audio from the reconstructed samples to persist for some time — because of
+    this, we're multiplying the signal at time p by a decaying exponential that
+    will carry the sound into the next time sample'''
+
+    x_n = []
+
+    for n in range(len(self.reconstructed_audio_T)):
+      audio_at_n = self.reconstructed_audio_T[n]
+
+      diff = ((n+1) * self.sample_window) - (self.audio.size)
+
+      if diff > 0:
+        n_range = np.arange(self.sample_window - diff)
+      else:
+        n_range = np.arange(self.sample_window)
+
+      decay = np.exp(-1*n_range * DECAY_EXP)
+      A = np.sum(audio_at_n)
+      
+      x_n.extend(A*decay)
+    
+    fig = plt.figure()
+    ax = fig.add_subplot()
+
+    Y = np.abs(x_n) * self.sign
+
+    X = np.arange(0, len(Y)*(1/self.play_rate), (1/self.play_rate))
+
+    ax.plot(X,Y)
+
+    # Generate a file path for this audio recording
+    file_path = f'out/{self.uuid}/audio'
+
+    if not os.path.exists(file_path):
+      os.makedirs(file_path)
+    file_path = file_path + f'/{self.uuid}.wav'
+
+    wavfile.write(file_path, self.sample_rate, Y.astype(np.int16))
+
+    return plt.show()
+
 
   def generate_tsv(self, uuid=uuid.uuid4(), amplitude=MAGNITUDE_MAX):
     '''Generates a text file containing what keys to play, returns unique id
@@ -154,12 +202,11 @@ class PianoPi:
     assert(self.sample_window)
 
     # Generate a unique id for this audio recording
-    id = str(uuid)
-    file_path = f'out/{id}'
+    file_path = f'out/{self.uuid}'
 
     if not os.path.exists(file_path):
       os.makedirs(file_path)
-    file_path = file_path + f'/{id}.tsv'
+    file_path = file_path + f'/{self.uuid}.tsv'
 
     # Create the text file named {uuid}.tsv
     with open(file_path,'wt') as out_file:
