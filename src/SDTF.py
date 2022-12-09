@@ -22,7 +22,7 @@ e.g x(15) with N=15 yields x(15) = {x[0], x[1], ..., x[15]}
 
 The frequency component X_k at time x[n] with window x(n) is:
 
-X_k(n) = [X_k(n-1) - x[n-N] + x[n]] (e^((j2pi)/N))
+X_k(n) = [X_k(n-1) - x[n-N] + x[n]] (e^((j2pi)/N)) ; (Eq. 1)
 
 --------------------------------------------------
 What does this have to do with the sliding piano?
@@ -73,6 +73,15 @@ t | W (window buffer)
 1 | [0 0 0 0 0 0 0   0    0  x[1]]
 2 | [0 0 0 0 0 0 0   0  x[1] x[2]]
 3 | [0 0 0 0 0 0 0 x[1] x[2] x[3]]
+
+----------------------------------------
+Acronyms (An unfortunate product of DSP)
+----------------------------------------
+- DFT : Discrete Fourier Transform
+- SDFT : Sliding Discrete Fourier Transform
+- SMA : Simple Moving Average
+
+Open an issue if you find any acronyms I haven't expanded out here!
 '''
 #############
 ## Imports ##
@@ -106,6 +115,7 @@ class SDFTBin:
     self.X_k = 0
     self.n = 0
     self.X_k_MA = MovingAverage()
+    self.x_n_MA = MovingAverage()
     print(f'Done. Max window size is {self.N_max}')
     print("----------------------------------------")
 
@@ -138,20 +148,42 @@ class SDFTBin:
     self.k = int(self.effective_frequency // self.effective_bandwidth)
     assert(self.k < self.N)
     print(f'Done! Found N = {self.N} and k = {self.k}')
+
+  def update_x_n(self, prev_X_k, curr_X_k, bottom_window_sample):
+    '''
+    Returns x[n] using the formula for X_k
+
+    ### Parameters
+    - prev_X_k : X_{k-1}[n]
+    - curr_X_k : X_k[n]
+    - bottom_window_sample : x[n-N]
+
+    ### Returns
+    - x_n : x[n] using Eq. (1) from file descirption
+    '''
+    x_n = (curr_X_k * (e**(-1j * 2*pi * (self.k / self.N)))) - prev_X_k + bottom_window_sample
+
+    self.x_n_MA.update(x_n)
       
   def update(self, x_n):
     '''Calculates the latest X_k given a new sample
       X_k(n) = [X_k(n-1) - x[n-N] + x[n]] (e^((j2pi)/N))
     '''
 
+    # Calculate new X_k, store previous values for our reconstruction of x[n]
+    prev_X_k = self.X_k
     self.X_k = (self.X_k - self.w[0] + x_n) * (e**((1j * 2*pi * self.k)/self.N))
-    x_n = self.w.pop(0) # x[n-N]
+    bottom_window_sample = self.w.pop(0)
+
+    # Calculate x[n], this function handles updating x[n]'s SMA
+    self.update_x_n(prev_X_k, self.X_k, bottom_window_sample)
+
+    # Wrapping up
     self.w.append(x_n)
     self.n += 1
     X_k = self.X_k_MA.SMA # X_{k-1}
     self.X_k_MA.update(self.X_k)
 
-    return (x_n, X_k)
 
   def parse(self, x):
     '''
@@ -162,16 +194,15 @@ class SDFTBin:
     rate
     '''
     print(f'Parsing input audio file of length {len(x)}')
-    X_k = [] # Resultant frequency through time
-    x_n_through_time = [] # Time-series data corresponding to X_k
-    for n, x_n in enumerate(x):
-      prev_x_n, prev_X_k = self.update(x_n)
+    X_k = []
+    x_n = []
+    for n, sample_n in enumerate(x):
+      self.update(sample_n)
       if (n % self.N_max) == 0:
         X_k.append(self.X_k_MA.SMA)
-        curr_x_n = (self.X_k_MA.SMA / (e**(1j * 2 * pi * (self.k / self.N)))) - (prev_X_k) + prev_x_n
-        x_n_through_time.append(curr_x_n)
-    print(f'Done! With a play rate of {self.play_rate}, we expect an output of size {len(x) // self.N_max}, and got {len(X_k)-1}')
-    return x_n, X_k
+        x_n.append(self.x_n_MA.SMA)
+    print(f'Done! With a play rate of {self.play_rate}, we expect an output of size {len(x) // self.N_max}, and got {len(X_k)-1}')    
+    return X_k, x_n
         
 
 
