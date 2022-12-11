@@ -214,6 +214,9 @@ class PianoPi:
     ax = fig.add_subplot()
 
     ax.plot(X,Y)
+    ax.set_title("Reconstructed Audio Signal r[n]")
+    ax.set_xlabel('Time [s]')
+    ax.set_ylabel('Amplitude')
 
     #Generate a file path for the plot image
     file_path = f'out/{self.uuid}/plots/png'
