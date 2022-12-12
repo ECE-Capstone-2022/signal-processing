@@ -1,6 +1,4 @@
 from piano_pi import *
-from scipy.io import wavfile
-from IPython import display
 from dbg import *
 import os
 
