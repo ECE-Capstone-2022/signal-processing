@@ -297,7 +297,7 @@ class PianoPi:
           if (strength > THRESHOLD):
             res[n][k] = strength
 
-    self.plot_piano_note_matrix(res)
+    # self.plot_piano_note_matrix(res)
 
     dbg_print(np.shape(res))
 
