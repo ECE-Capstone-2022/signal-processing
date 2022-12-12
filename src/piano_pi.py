@@ -35,6 +35,9 @@ import pandas as pd
 ## Constants ##
 ###############
 
+# Piano Key Gain
+GAIN = 10
+
 # Audio Reconstruction
 # TODO: See comment below
 '''
@@ -265,3 +268,33 @@ class PianoPi:
     out_file.close()
 
     return file_path
+
+  def generate_piano_note_matrix(self, amplitude=MAGNITUDE_MAX):
+    '''
+    Generates a matrix representing what piano keys to press using a naive
+    filtering algorithm that will not press a key unless the power at that key
+    is higher than at the previous timestamp
+    '''
+
+    dbg_assert(self.reconstructed_audio_T)
+
+    if len(self.reconstructed_audio_T) < 2:
+      # Not enough samples to play piano notes
+      return []
+
+
+    max_amplitude = np.amax(np.absolute(self.reconstructed_audio_T))
+    res = []
+    prev_sample = np.absolute(self.reconstructed_audio_T[0])
+
+    for n, curr_sample in enumerate(np.absolute(self.reconstructed_audio_T[1:])):
+      # Compare keys from current sample to previous sample
+      key_presses = [0 for i in range(len(PIANO_KEY_FREQUENCIES))]
+      for i, key in enumerate(key_presses):
+        if curr_sample[i] > prev_sample[i]:
+          # New key being pressed
+          key_presses[i] = min((curr_sample[i] / max_amplitude), 1)
+      prev_sample = curr_sample
+      res.append(key_presses)
+    
+    return res

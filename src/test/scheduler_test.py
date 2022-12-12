@@ -32,6 +32,6 @@ def sharp_identity_matrix():
   for i in range(88):
     M[i][i] = 1
     if i > 0:
-      M[i-1][i-1] = -1
+      M[i][i-1] = -1
 
   return M

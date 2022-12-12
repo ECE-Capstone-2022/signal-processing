@@ -15,4 +15,6 @@ PianoPi.generate_output_wav_file()
 
 dbg_print("Number of cores: ", os.cpu_count())
 
-PianoPi.generate_tsv()
+# PianoPi.generate_tsv()
+
+print(PianoPi.generate_piano_note_matrix())
