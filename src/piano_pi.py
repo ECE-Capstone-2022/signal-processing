@@ -37,6 +37,7 @@ import pandas as pd
 
 # Piano Key Gain
 GAIN = 10
+THRESHOLD = 0.2
 
 # Audio Reconstruction
 # TODO: See comment below
@@ -282,7 +283,6 @@ class PianoPi:
       # Not enough samples to play piano notes
       return []
 
-
     max_amplitude = np.amax(np.absolute(self.reconstructed_audio_T))
     res = []
     prev_sample = np.absolute(self.reconstructed_audio_T[0])
@@ -293,8 +293,8 @@ class PianoPi:
       for i, key in enumerate(key_presses):
         if curr_sample[i] > prev_sample[i]:
           # New key being pressed
-          key_presses[i] = min((curr_sample[i] / max_amplitude), 1)
-      prev_sample = curr_sample
+          to_be_pressed = min((curr_sample[i] / max_amplitude), 1)
+          key_presses[i] = 0 if to_be_pressed < THRESHOLD else to_be_pressed
       res.append(key_presses)
     
     return res
