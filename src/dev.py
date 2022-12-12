@@ -9,7 +9,7 @@ PianoPi = PianoPi(file_path = audio_path, play_rate=15)
 
 PianoPi.plot_freq_through_time()
 
-PianoPi.generate_output_wav_file()
+# PianoPi.generate_output_wav_file()
 
 dbg_print("Number of cores: ", os.cpu_count())
 

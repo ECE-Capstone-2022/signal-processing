@@ -194,7 +194,7 @@ class SDFTBin:
     Note: The incoming samples must have been recorded at this bins set sample 
     rate
     '''
-    dbg_print(f'Parsing input audio file of length {len(x)}')
+    # dbg_print(f'Parsing input audio file of length {len(x)}')
     X_k = []
     x_n = []
     for n, sample_n in enumerate(x):
@@ -202,9 +202,8 @@ class SDFTBin:
       if (n % self.N_max) == 0:
         X_k.append(self.X_k_MA.SMA)
         x_n.append(self.x_n_MA.SMA)
-    dbg_print(f'Done! With a play rate of {self.play_rate}, we expect an output of size {len(x) // self.N_max}, and got {len(X_k)-1}')    
+    # dbg_print(f'Done! With a play rate of {self.play_rate}, we expect an output of size {len(x) // self.N_max}, and got {len(X_k)-1}')    
     return X_k, x_n
-        
 
 
 ####################

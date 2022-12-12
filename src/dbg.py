@@ -20,9 +20,9 @@ for opt, arg in opts:
   if opt in ['-d', '--DEBUG']:
     DEBUG = True
 
-def dbg_print(*s):
+def dbg_print(*args, **kwargs):
   if (DEBUG):
-    print(s)
+    print(" ".join(map(str,args)), **kwargs)
 
 def dbg_assert(*c):
   if DEBUG:

@@ -37,7 +37,7 @@ import pandas as pd
 
 # Piano Key Gain
 GAIN = 10
-THRESHOLD = 0.2
+THRESHOLD = 0.05
 
 # Audio Reconstruction
 # TODO: See comment below
@@ -91,7 +91,6 @@ class PianoPi:
   def generate_output(self):
     # Preconditions
     dbg_assert(PIANO_KEY_FREQUENCIES)
-    # dbg_assert(self.audio_time_series) TODO: Check for existence but not working
 
     self.audio_len = len(self.audio_time_series)
     self.audio = self.audio_time_series
@@ -104,21 +103,20 @@ class PianoPi:
     self.reconstructed_audio = [[] for i in range(len(PIANO_KEY_FREQUENCIES))]
     dbg_assert(len(self.key_freq_through_time) == len(self.SDFTBins))
 
-    # TODO: Parrallelize this code block
+    # # TODO: Parrallelize this code block
     for i, bin in enumerate(self.SDFTBins):
       dbg_print(f'Parsing audio file for key {i+1}')
       X_k, x_n = bin.parse(self.audio_time_series)
       self.key_freq_through_time[i] = X_k # X_k[n] for this specific key
       self.reconstructed_audio[i] = x_n # x[n] for this specific key
 
-    # Also generate transposed versions of both matrices
+    # # Also generate transposed versions of both matrices
     self.key_freq_through_time_T = np.transpose(self.key_freq_through_time)
     self.reconstructed_audio_T = np.transpose(self.reconstructed_audio)
-    dbg_print(np.shape(self.key_freq_through_time))
 
 
   def plot_freq_through_time(self):
-    dbg_assert(self.key_freq_through_time)
+    dbg_assert(self.key_freq_through_time_T)
     dbg_assert(self.audio_len)
     dbg_assert(self.sample_window)
 
@@ -240,7 +238,7 @@ class PianoPi:
     for given recording.'''
 
     # Preconditions
-    dbg_assert(self.key_freq_through_time)
+    dbg_assert(self.key_freq_through_time_T)
     dbg_assert(TSV_HEADERS)
     dbg_assert(self.audio_len)
     dbg_assert(self.sample_window)
@@ -259,10 +257,10 @@ class PianoPi:
       tsv_writer.writerow(TSV_HEADERS)
 
       # Iterate through every play rate sample
-      for i in range(len(self.key_freq_through_time[0])):
+      for i in range(len(self.key_freq_through_time_T[0])):
         time_stamp_ms = round(i * (1 / self.play_rate) * 1000)
         tsv_row = [f'{time_stamp_ms}']
-        for key in self.key_freq_through_time:
+        for key in self.key_freq_through_time_T:
           tsv_row.append('{0:.2f}'.format((100*(np.abs(key[i]) / amplitude))))
         tsv_writer.writerow(tsv_row)
 
@@ -270,31 +268,80 @@ class PianoPi:
 
     return file_path
 
-  def generate_piano_note_matrix(self, amplitude=MAGNITUDE_MAX):
+  def generate_piano_note_matrix(self):
     '''
     Generates a matrix representing what piano keys to press using a naive
     filtering algorithm that will not press a key unless the power at that key
     is higher than at the previous timestamp
     '''
 
-    dbg_assert(self.reconstructed_audio_T)
+    dbg_assert(self.key_freq_through_time_T)
 
-    if len(self.reconstructed_audio_T) < 2:
+    if len(self.key_freq_through_time_T) < 2:
       # Not enough samples to play piano notes
       return []
 
-    max_amplitude = np.amax(np.absolute(self.reconstructed_audio_T))
-    res = []
-    prev_sample = np.absolute(self.reconstructed_audio_T[0])
+    res = [[0 for j in range(len(self.key_freq_through_time_T[i]))] for i in range(len(self.key_freq_through_time_T))]
+    dbg_assert(np.shape(res) == np.shape(self.key_freq_through_time_T))
 
-    for n, curr_sample in enumerate(np.absolute(self.reconstructed_audio_T[1:])):
-      # Compare keys from current sample to previous sample
-      key_presses = [0 for i in range(len(PIANO_KEY_FREQUENCIES))]
-      for i, key in enumerate(key_presses):
-        if curr_sample[i] > prev_sample[i]:
-          # New key being pressed
-          to_be_pressed = min((curr_sample[i] / max_amplitude), 1)
-          key_presses[i] = 0 if to_be_pressed < THRESHOLD else to_be_pressed
-      res.append(key_presses)
+    max_amplitude = np.amax(np.abs(self.key_freq_through_time_T))
     
+    for n in range(1, len(self.key_freq_through_time_T)):
+      for k in range(len(self.key_freq_through_time_T[n])):
+        prev_power = np.abs(self.key_freq_through_time_T[n-1][k])
+        curr_power = np.abs(self.key_freq_through_time_T[n][k])
+
+        if (curr_power > prev_power):
+          # Reset strength
+          strength = curr_power / max_amplitude
+          if (strength > THRESHOLD):
+            res[n][k] = strength
+
+    self.plot_piano_note_matrix(res)
+
+    dbg_print(np.shape(res))
+
     return res
+
+  def plot_piano_note_matrix(self, matrix):
+    dbg_assert(self.key_freq_through_time_T)
+    dbg_assert(self.audio_len)
+    dbg_assert(self.sample_window)
+
+    D = {
+      "X" : [],
+      "Y" : [],
+      "Z" : [],
+      "color" : [],
+    }
+
+    for n in range(len(matrix)):
+      freqs_at_n = np.abs(matrix[n])
+      D["Y"].extend(PIANO_KEY_FREQUENCIES)
+      D["Z"].extend(freqs_at_n)
+      D["X"].extend(np.full(len(PIANO_KEY_FREQUENCIES), n * (1/self.play_rate)))
+      D["color"].extend([n]*len(freqs_at_n))
+
+    # tight layout
+    df = pd.DataFrame(D)
+    fig = px.line_3d(df, x="X", y="Y", z="Z", 
+                     color="color",
+                     labels={
+                        "X": "Time t [s]",
+                        "Y": "Frequency \u03C9 [Hz]",
+                        "Z": "Piano Note Strength",
+                        "color" : "Piano Sample [n]"
+                    },
+                     title="Piano Notes")
+
+    # Generate File Path
+    file_path = f'out/{self.uuid}/plots/html'
+
+    if not os.path.exists(file_path):
+      os.makedirs(file_path)
+    file_path = file_path + f'/{self.uuid}_piano_notes.html'
+
+    fig.write_html(file_path)
+    
+    if (DEBUG): 
+      fig.show()
